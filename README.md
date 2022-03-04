@@ -6,6 +6,18 @@ Command line utility to find JVM versions on macOS - useful for setting _JAVA_HO
 
 I'm thinking of you, Java Devs with Apple Silicon hardware 🐱‍💻
 
+## Install
+
+The utility can be installed using Homebrew via the [homebrew-javalocate](https://github.com/dameikle/homebrew-javalocate) tap:
+```bash
+brew tap dameikle/javalocate
+brew install javalocate
+```
+Or using Cargo via the [javalocate](https://crates.io/crates/javalocate) crate on crates.io:
+```bash
+cargo install javalocate
+```
+
 ## Usage
 
 The utility is designed to be used in a similar fashion to the _/usr/libexec/java_home_ by providing 
