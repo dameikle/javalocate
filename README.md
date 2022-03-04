@@ -44,7 +44,7 @@ For example, to get the path to the x86_64 JVM for Java 11
 javalocate -v 11 -a x86_64
 ```
 
-For example, to get the latest aarch64 JVM available
+For example, to get the path to latest aarch64 JVM available
 ```bash
 javalocate -a aarch64
 ```
