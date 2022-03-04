@@ -39,14 +39,19 @@ For example, to get the path to Java 17
 javalocate -v 17
 ```
 
-For example, to get the path to the x86_64 JVM for Java 11 
+Or to get the path to the x86_64 JVM for Java 11 
 ```bash
 javalocate -v 11 -a x86_64
 ```
 
-For example, to get the path to latest aarch64 JVM available
+Or to get the path to latest aarch64 JVM available
 ```bash
 javalocate -a aarch64
+```
+
+You can also specify a minimum version by appending a _+_ to the version:
+```bash
+javalocate -v 1.8+
 ```
 
 ### Response Code
@@ -57,6 +62,10 @@ Setting the fail flag (_--fail or _-f_) changes this behaviour, returning a CONF
 
 This can be useful if you want to use the utility in a shell script.
 
+For example, the below would return an error code if Java 11 or above could not be found when trying to set the _JAVA_HOME_ environment variable:
+```bash
+export JAVA_HOME=$(javalocate -v 11+ -f)
+```
 
 ## Building
 
