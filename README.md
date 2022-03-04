@@ -54,9 +54,9 @@ You can also specify a minimum version by appending a _+_ to the version:
 javalocate -v 1.8+
 ```
 
-### Response Code
+### Exit Code
 
-By default, the utility responds with an OK (0) exit code whether a JVM is found or not.
+By default, the utility returns an OK (0) exit code whether a JVM is found or not.
 
 Setting the fail flag (_--fail or _-f_) changes this behaviour, returning a CONFIG ERROR (78) exit code.
 
