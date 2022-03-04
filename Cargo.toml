@@ -1,7 +1,11 @@
 [package]
 name = "javalocate"
 version = "0.1.0"
+description = "Command line utility to find JVM versions on macOS"
+license = "Apache-2.0"
+repository = "https://github.com/dameikle/javalocate"
 edition = "2021"
+
 
 [dependencies]
 clap = { version = "3.1.5", features = ["derive"] }

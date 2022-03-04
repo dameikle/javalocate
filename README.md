@@ -81,7 +81,7 @@ cargo build --profile release
 ```
 
 ## Licence
-Copyright 2021 David Meikle
+Copyright 2022 David Meikle
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
