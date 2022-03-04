@@ -34,7 +34,6 @@ struct Args {
 
 struct Jvm {
     version: String,
-    release: f32,
     name: String,
     architecture: String,
     path: String,
@@ -64,12 +63,11 @@ fn main() {
     // If JVMS found, display
     if args.detailed {
         for jvm in &jvms {
-            println!("{} ({}) \"{}\" - {} ({})",
+            println!("{} ({}) \"{}\" - {}",
                      jvm.version,
                      jvm.architecture,
                      jvm.name,
-                     jvm.path,
-                     jvm.release
+                     jvm.path
             );
         }
     }
@@ -111,12 +109,10 @@ fn collate_jvms() -> Vec<Jvm> {
             let properties = read(BufReader::new(release_file)).unwrap();
             let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
             let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
-            let release = process_version(&version).parse::<f32>().unwrap();
 
             // Build JVM Struct
             let tmp_jvm = Jvm {
                 version,
-                release,
                 architecture,
                 name,
                 path: path.to_str().unwrap().to_string(),
@@ -124,33 +120,43 @@ fn collate_jvms() -> Vec<Jvm> {
             jvms.push(tmp_jvm);
         }
     }
-    jvms.sort_by(|a, b| b.release.partial_cmp(&a.release).unwrap_or(Equal));
+    jvms.sort_by(|a, b| b.version.partial_cmp(&a.version).unwrap_or(Equal));
     return jvms;
-}
-
-fn process_version(version: &String) -> String {
-    let parts: Vec<String> = version.split(".").map(|s| s.to_string()).collect();
-    let mut release_no: String = parts.get(0).unwrap().to_string();
-    if parts.get(0).unwrap() == "1" {
-        release_no.push_str(".");
-        release_no.push_str(parts.get(1).unwrap());
-    }
-    release_no
 }
 
 fn filter_ver(ver: &Option<String>, jvm: &Jvm) -> bool {
     if !ver.is_none() {
-        if ver.as_ref().unwrap().contains("+") {
-            if jvm.release < ver.as_ref().unwrap().replace("+", "").parse::<f32>().unwrap() {
+        let version = ver.as_ref().unwrap();
+        if version.contains("+") {
+            if jvm.version < version.replace("+", "") {
                 return false;
             }
         } else {
-            if jvm.release != ver.as_ref().unwrap().parse::<f32>().unwrap()  {
+            let compare_version = get_compare_version(jvm, version);
+            // Handle single unit comparison against older version numbers
+            if compare_version == "1" {
+                return false;
+            }
+            // Perform comparison
+            if version != compare_version.as_str() {
                 return false;
             }
         }
     }
     return true;
+}
+
+fn get_compare_version(jvm: &Jvm, version: &String) -> String {
+    let version_count = version.matches('.').count();
+    let tmp_version: Vec<String> =
+        jvm.version.split_inclusive(".").map(|s| s.to_string()).collect();
+    let mut compare_version: String = String::new();
+    for i in 0..version_count + 1 {
+        compare_version.push_str(tmp_version.get(i).unwrap_or(&"".to_string()));
+    }
+    compare_version = compare_version.strip_suffix(".")
+        .unwrap_or(compare_version.as_str()).to_string();
+    compare_version
 }
 
 fn filter_arch(arch: &Option<String>, jvm: &Jvm) -> bool {
@@ -170,5 +176,4 @@ fn filter_name(name: &Option<String>, jvm: &Jvm) -> bool {
     }
     return true;
 }
-
 
