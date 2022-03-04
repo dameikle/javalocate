@@ -177,3 +177,66 @@ fn filter_name(name: &Option<String>, jvm: &Jvm) -> bool {
     return true;
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_name() {
+        let jvm = Jvm {
+            version: "17.0.2".to_string(),
+            name: "Eclipse Temurin 17".to_string(),
+            architecture: "aarch64".to_string(),
+            path: "/Library/Java/JavaVirtualMachines/temurin-17.jdk".to_string()
+        };
+        let same_name: Option<String> = Option::Some("Eclipse Temurin 17".to_string());
+        let different_name: Option<String> = Option::Some("Eclipse Temurin 11".to_string());
+        assert_eq!(filter_name(&same_name, &jvm), true);
+        assert_eq!(filter_name(&different_name, &jvm), false);
+    }
+
+    #[test]
+    fn test_filter_arch() {
+        let jvm = Jvm {
+            version: "17.0.2".to_string(),
+            name: "Eclipse Temurin 17".to_string(),
+            architecture: "aarch64".to_string(),
+            path: "/Library/Java/JavaVirtualMachines/temurin-17.jdk".to_string()
+        };
+        let same_arch: Option<String> = Option::Some("aarch64".to_string());
+        let different_arch: Option<String> = Option::Some("x86_64".to_string());
+        assert_eq!(filter_arch(&same_arch, &jvm), true);
+        assert_eq!(filter_arch(&different_arch, &jvm), false);
+    }
+
+    #[test]
+    fn test_filter_version() {
+        let jvm = Jvm {
+            version: "17.0.2".to_string(),
+            name: "Eclipse Temurin 17".to_string(),
+            architecture: "aarch64".to_string(),
+            path: "/Library/Java/JavaVirtualMachines/temurin-17.jdk".to_string()
+        };
+        let same_ver: Option<String> = Option::Some("17".to_string());
+        let different_ver_same_format: Option<String> = Option::Some("11".to_string());
+        let different_ver_diff_format: Option<String> = Option::Some("11.0.2".to_string());
+        assert_eq!(filter_ver(&same_ver, &jvm), true);
+        assert_eq!(filter_ver(&different_ver_same_format, &jvm), false);
+        assert_eq!(filter_ver(&different_ver_diff_format, &jvm), false);
+
+    }
+
+    #[test]
+    fn test_compare_version() {
+        let jvm = Jvm {
+            version: "17.0.2".to_string(),
+            name: "Eclipse Temurin 17".to_string(),
+            architecture: "aarch64".to_string(),
+            path: "/Library/Java/JavaVirtualMachines/temurin-17.jdk".to_string()
+        };
+        assert_eq!(get_compare_version(&jvm, &"17".to_string()), "17");
+        assert_eq!(get_compare_version(&jvm, &"17.1".to_string()), "17.0");
+        assert_eq!(get_compare_version(&jvm, &"17.0.1".to_string()), "17.0.2");
+    }
+
+}
