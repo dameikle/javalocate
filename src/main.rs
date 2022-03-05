@@ -7,9 +7,9 @@ use java_properties::read;
 use plist::Value;
 
 
-/// Command line utility to find JVMs
+/// Command line utility to find JVM versions on macOS
 #[derive(Parser, Debug)]
-#[clap(author, about, long_about = None)]
+#[clap(author, about, version, long_about = None)]
 struct Args {
     /// JVM Name to filter on
     #[clap(short, long)]
@@ -220,10 +220,11 @@ mod tests {
         let same_ver: Option<String> = Option::Some("17".to_string());
         let different_ver_same_format: Option<String> = Option::Some("11".to_string());
         let different_ver_diff_format: Option<String> = Option::Some("11.0.2".to_string());
+        let different_ver_diff_format2: Option<String> = Option::Some("11.0.2.1".to_string());
         assert_eq!(filter_ver(&same_ver, &jvm), true);
         assert_eq!(filter_ver(&different_ver_same_format, &jvm), false);
         assert_eq!(filter_ver(&different_ver_diff_format, &jvm), false);
-
+        assert_eq!(filter_ver(&different_ver_diff_format2, &jvm), false);
     }
 
     #[test]
@@ -237,6 +238,7 @@ mod tests {
         assert_eq!(get_compare_version(&jvm, &"17".to_string()), "17");
         assert_eq!(get_compare_version(&jvm, &"17.1".to_string()), "17.0");
         assert_eq!(get_compare_version(&jvm, &"17.0.1".to_string()), "17.0.2");
+        assert_eq!(get_compare_version(&jvm, &"17.0.1.1".to_string()), "17.0.2");
     }
 
 }
