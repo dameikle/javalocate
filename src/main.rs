@@ -1,7 +1,8 @@
-use std::cmp::Ordering::Equal;
+use std::cmp::Ordering;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
+use std::process::{Command, Stdio};
 use clap::Parser;
 use java_properties::read;
 use plist::Value;
@@ -31,7 +32,7 @@ struct Args {
     #[clap(short, long)]
     fail: bool,
 }
-
+#[derive(Clone, Debug)]
 struct Jvm {
     version: String,
     name: String,
@@ -42,8 +43,11 @@ struct Jvm {
 fn main() {
     let args = Args::parse();
 
+    // Fetch default java architecture based on kernel
+    let default_java_arch = fetch_default_java_arch();
+
     // Build and filter JVMs
-    let jvms: Vec<Jvm> = collate_jvms()
+    let jvms: Vec<Jvm> = collate_jvms(&default_java_arch)
         .into_iter()
         .filter(|tmp| filter_arch(&args.arch, tmp))
         .filter(|tmp| filter_ver(&args.version, tmp))
@@ -60,7 +64,7 @@ fn main() {
         }
     }
 
-    // If JVMS found, display
+    // If JVMs found, display
     if args.detailed {
         for jvm in &jvms {
             println!("{} ({}) \"{}\" - {}",
@@ -76,7 +80,38 @@ fn main() {
     }
 }
 
-fn collate_jvms() -> Vec<Jvm> {
+fn fetch_default_java_arch() -> String {
+    let output = Command::new("uname")
+        .arg("-ps")
+        .stdout(Stdio::piped())
+        .output().unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parts: Vec<String> =
+        stdout.split(" ").map(|s| s.to_string()).collect();
+
+    let os = trim_string(parts.get(0).unwrap().as_str());
+    let arch = trim_string(parts.get(1).unwrap().as_str());
+
+    if os.eq_ignore_ascii_case("Darwin") {
+        return if arch.eq_ignore_ascii_case("arm") {
+            "aarch64".to_string()
+        } else {
+            "x86_64".to_string()
+        }
+    } else {
+        eprintln!("Running on non-Darwin Unix");
+        std::process::exit(exitcode::UNAVAILABLE);
+    }
+}
+
+fn trim_string(value: &str) -> &str {
+    value.strip_suffix("\r\n")
+        .or(value.strip_suffix("\n"))
+        .unwrap_or(value)
+}
+
+fn collate_jvms(default_arch: &String) -> Vec<Jvm> {
     let mut jvms = Vec::new();
     let paths = fs::read_dir("/Library/Java/JavaVirtualMachines").unwrap();
     for path in paths {
@@ -120,8 +155,21 @@ fn collate_jvms() -> Vec<Jvm> {
             jvms.push(tmp_jvm);
         }
     }
-    jvms.sort_by(|a, b| b.version.partial_cmp(&a.version).unwrap_or(Equal));
+    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, default_arch));
     return jvms;
+}
+
+fn compare_boosting_architecture(a: &Jvm, b: &Jvm, default_arch: &String) -> Ordering {
+    let version_test = b.version.partial_cmp(&a.version).unwrap_or(Ordering::Equal);
+    if version_test == Ordering::Equal {
+        if b.architecture != default_arch.as_str() && a.architecture == default_arch.as_str() {
+            return Ordering::Less;
+        }
+        if b.architecture == default_arch.as_str() && a.architecture != default_arch.as_str() {
+            return Ordering::Greater;
+        }
+    }
+    return version_test;
 }
 
 fn filter_ver(ver: &Option<String>, jvm: &Jvm) -> bool {
@@ -239,6 +287,48 @@ mod tests {
         assert_eq!(get_compare_version(&jvm, &"17.1".to_string()), "17.0");
         assert_eq!(get_compare_version(&jvm, &"17.0.1".to_string()), "17.0.2");
         assert_eq!(get_compare_version(&jvm, &"17.0.1.1".to_string()), "17.0.2");
+    }
+
+    #[test]
+    fn test_trim_string(){
+        assert_eq!(trim_string("Arm\n"), "Arm");
+        assert_eq!(trim_string("Arm\r\n"), "Arm");
+        assert_eq!(trim_string("Arm"), "Arm");
+    }
+
+    #[test]
+    fn test_compare_boosting_architecture(){
+        let jvm1: Jvm = create_jvm("11.0.2", "Eclipse Temurin 11", "aarch64", "/Library/Java/JavaVirtualMachines/temurin-11-aarch64.jdk");
+        let jvm2: Jvm = create_jvm("11.0.2", "Eclipse Temurin 11", "x86_64", "/Library/Java/JavaVirtualMachines/temurin-11-x86_64.jdk");
+        let jvm3: Jvm = create_jvm("17.0.1", "Eclipse Temurin 17", "x86_64", "/Library/Java/JavaVirtualMachines/temurin-17-x86_64.jdk");
+
+        let gold_ordered_aarch64 :Vec<Jvm> = vec![jvm3.clone(), jvm1.clone(), jvm2.clone()];
+        let gold_ordered_x86_64 :Vec<Jvm> = vec![jvm3.clone(), jvm2.clone(), jvm1.clone()];
+        let mut jvms :Vec<Jvm> = vec![jvm1.clone(), jvm2.clone(), jvm3.clone()];
+
+        jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &"aarch64".to_string()));
+        assert_eq!(jvm_vec_compare(gold_ordered_aarch64, &jvms), true);
+        jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &"x86_64".to_string()));
+        assert_eq!(jvm_vec_compare(gold_ordered_x86_64, &jvms), true);
+    }
+
+    fn create_jvm(version: &str, name: &str, architecture: &str, path: &str) -> Jvm {
+        return Jvm {
+            version: version.to_string(),
+            name: name.to_string(),
+            architecture: architecture.to_string(),
+            path: path.to_string()
+        };
+    }
+
+    fn jvm_vec_compare(va: Vec<Jvm>, vb: &Vec<Jvm>) -> bool {
+        (va.len() == vb.len()) &&
+            va.iter()
+                .zip(vb)
+                .all(|(a,b)| a.architecture == b.architecture
+                    && a.version == b.version
+                    && a.name == b.name
+                    && a.path == b.path)
     }
 
 }
