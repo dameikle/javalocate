@@ -34,7 +34,7 @@ struct Args {
     fail: bool
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Jvm {
     version: String,
     name: String,
@@ -42,7 +42,7 @@ struct Jvm {
     path: String
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct OperatingSystem {
     name: String,
     family: String,
@@ -280,7 +280,7 @@ fn collate_jvms_mac(os: &OperatingSystem) -> Vec<Jvm> {
 }
 
 fn compare_boosting_architecture(a: &Jvm, b: &Jvm, default_arch: &String) -> Ordering {
-    let version_test = b.version.partial_cmp(&a.version).unwrap_or(Ordering::Equal);
+    let version_test = compare_version_values(&b.version, &a.version);
     if version_test == Ordering::Equal {
         if b.architecture != default_arch.as_str() && a.architecture == default_arch.as_str() {
             return Ordering::Less;
@@ -296,17 +296,16 @@ fn filter_ver(ver: &Option<String>, jvm: &Jvm) -> bool {
     if !ver.is_none() {
         let version = ver.as_ref().unwrap();
         if version.contains("+") {
-            if jvm.version < version.replace("+", "") {
+            let sanitised_version = version.replace("+", "");
+            let compare_jvm_version = get_compare_version(jvm, &sanitised_version);
+            let compare = compare_version_values(&compare_jvm_version, &sanitised_version);
+            if compare.is_le() {
                 return false;
             }
         } else {
-            let compare_version = get_compare_version(jvm, version);
-            // Handle single unit comparison against older version numbers
-            if compare_version == "1" {
-                return false;
-            }
-            // Perform comparison
-            if version != compare_version.as_str() {
+            let compare_jvm_version = get_compare_version(jvm, version);
+            let compare = compare_version_values(&version, &compare_jvm_version);
+            if compare.is_ne() {
                 return false;
             }
         }
@@ -314,10 +313,50 @@ fn filter_ver(ver: &Option<String>, jvm: &Jvm) -> bool {
     return true;
 }
 
+fn compare_version_values(version1: &String, version2: &String) -> Ordering {
+    // Normalise old style versions - e.g. 1.8 -> 8, 1.9 -> 9
+    let mut normalised1= version1.strip_prefix("1.")
+        .unwrap_or(version1.as_str()).to_string();
+    let mut normalised2= version2.strip_prefix("1.")
+        .unwrap_or(version2.as_str()).to_string();
+    // Normalise old sub versions e.g. 1.8.0_292 -> 1.8.0.292
+    normalised1 = normalised1.replace("_", ".");
+    normalised2 = normalised2.replace("_", ".");
+
+    let count_version1: Vec<String> =
+        normalised1.split(".").map(|s| s.to_string()).collect();
+    let count_version2: Vec<String> =
+        normalised2.split(".").map(|s| s.to_string()).collect();
+
+    let compare = Ordering::Equal;
+    for i in 0..count_version1.len() {
+        let version1_int = count_version1.get(i).unwrap().parse::<i32>().unwrap();
+        let version2_int = count_version2.get(i).unwrap().parse::<i32>().unwrap();
+        if version1_int > version2_int {
+            return Ordering::Greater
+        } else if version1_int < version2_int {
+            return Ordering::Less;
+        } else {
+            continue;
+        }
+    }
+    return compare;
+}
+
 fn get_compare_version(jvm: &Jvm, version: &String) -> String {
     let version_count = version.matches('.').count();
+    let mut  jvm_version = jvm.version.clone();
+
+    // Normalise single digit compares for old style versions
+    if jvm.version.starts_with("1.") && version.matches('.').count() == 0 {
+        if !version.starts_with("1.") {
+            jvm_version = jvm_version.strip_prefix("1.")
+                .unwrap_or(jvm_version.as_str()).to_string();
+        }
+    }
+
     let tmp_version: Vec<String> =
-        jvm.version.split_inclusive(".").map(|s| s.to_string()).collect();
+        jvm_version.split_inclusive(".").map(|s| s.to_string()).collect();
     let mut compare_version: String = String::new();
     for i in 0..version_count + 1 {
         compare_version.push_str(tmp_version.get(i).unwrap_or(&"".to_string()));
@@ -395,10 +434,28 @@ mod tests {
                              "Eclipse Temurin 17",
                              "aarch64",
                              "/Library/Java/JavaVirtualMachines/temurin-17.jdk");
+        assert_eq!(get_compare_version(&jvm, &"8+".to_string()), "17");
         assert_eq!(get_compare_version(&jvm, &"17".to_string()), "17");
         assert_eq!(get_compare_version(&jvm, &"17.1".to_string()), "17.0");
         assert_eq!(get_compare_version(&jvm, &"17.0.1".to_string()), "17.0.2");
         assert_eq!(get_compare_version(&jvm, &"17.0.1.1".to_string()), "17.0.2");
+        assert_eq!(get_compare_version(&jvm, &"17.0.1_bau".to_string()), "17.0.2");
+        let jvm2 = create_jvm("1.8.0",
+                             "AdoptOpenJDK 8",
+                             "aarch64",
+                             "/Library/Java/JavaVirtualMachines/adoptopenjdk-1.8.0.jdk");
+        assert_eq!(get_compare_version(&jvm2, &"8".to_string()), "8");
+
+    }
+
+    #[test]
+    fn test_compare_version_values(){
+        assert_eq!(compare_version_values(&"17.0.1".to_string(), &"17.0.1".to_string()), Ordering::Equal);
+        assert_eq!(compare_version_values(&"8.0.1".to_string(), &"17.0.1".to_string()), Ordering::Less);
+        assert_eq!(compare_version_values(&"8.1.1".to_string(), &"8.0.1".to_string()), Ordering::Greater);
+        assert_eq!(compare_version_values(&"17".to_string(), &"17".to_string()), Ordering::Equal);
+        assert_eq!(compare_version_values(&"17".to_string(), &"11".to_string()), Ordering::Greater);
+        assert_eq!(compare_version_values(&"1.8".to_string(), &"8".to_string()), Ordering::Equal);
     }
 
     #[test]
@@ -422,10 +479,14 @@ mod tests {
                                    "Eclipse Temurin 17",
                                    "x86_64",
                                    "/Library/Java/JavaVirtualMachines/temurin-17-x86_64.jdk");
+        let jvm4: Jvm = create_jvm("8",
+                                   "Adopt OpenJDK 8",
+                                   "x86_64",
+                                   "/Library/Java/JavaVirtualMachines/java-8-openjdk-amd64");
 
-        let gold_ordered_aarch64 :Vec<Jvm> = vec![jvm3.clone(), jvm1.clone(), jvm2.clone()];
-        let gold_ordered_x86_64 :Vec<Jvm> = vec![jvm3.clone(), jvm2.clone(), jvm1.clone()];
-        let mut jvms :Vec<Jvm> = vec![jvm1.clone(), jvm2.clone(), jvm3.clone()];
+        let gold_ordered_aarch64 :Vec<Jvm> = vec![jvm3.clone(), jvm1.clone(), jvm2.clone(), jvm4.clone()];
+        let gold_ordered_x86_64 :Vec<Jvm> = vec![jvm3.clone(), jvm2.clone(), jvm1.clone(), jvm4.clone()];
+        let mut jvms :Vec<Jvm> = vec![jvm1.clone(), jvm2.clone(), jvm3.clone(), jvm4.clone()];
 
         jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &"aarch64".to_string()));
         assert_eq!(jvm_vec_compare(gold_ordered_aarch64, &jvms), true);
