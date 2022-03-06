@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/javalocate)](https://crates.io/crates/javalocate)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/dameikle/javalocate)](https://github.com/dameikle/javalocate/releases)
 
-Command line utility to find JVM versions on macOS - useful for setting _JAVA_HOME_, particularly on machines with different JVM versions and architectures. 
+Command line utility to find JVM versions on macOS and Linux (Debian, Ubuntu, RHEL/CentOS & Fedora) - useful for setting _JAVA_HOME_, particularly on machines with different JVM versions and architectures. 
 
 I'm thinking of you, Java Devs with Apple Silicon hardware 🐱‍💻
 
@@ -81,6 +81,22 @@ For example, the below would return an error code if Java 11 or above could not 
 ```bash
 export JAVA_HOME=$(javalocate -v 11+ -f)
 ```
+
+## Operating Systems Supported
+
+The utility looks in the default JVM installation locations for the following operating systems:
+
+| Operating System | Location                          |
+|------------------|-----------------------------------|
+| macOS            | /Library/Java/JavaVirtualMachines |
+| Ubuntu           | /usr/lib/jvm                      |
+| Debian           | /usr/lib/jvm                      |
+| RHEL             | /usr/lib/jvm                      |
+| CentOS           | /usr/lib/jvm                      |
+| Fedora           | /usr/lib/jvm                      |
+
+It assumes that the _release_ file is included in the JVM package on Linux, and the _release_ file and
+_Info.plist_ file is packaged on macOS.
 
 ## Building
 
