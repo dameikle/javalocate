@@ -187,27 +187,45 @@ fn collate_jvms_linux(os: &OperatingSystem) -> Vec<Jvm> {
         let link = fs::read_link(&path);
 
         if metadata.is_dir() && link.is_err() {
-            // Attempt to load the Release file into HashMap
+            // Attempt to use release file, if not, attempt to build from folder name
             let release_file = File::open(path.join("release"));
-            let release_file = match release_file {
-                Ok(release_file) => release_file,
-                Err(_error) => continue,
-            };
+            if release_file.is_ok() {
+                // Collate required information
+                let properties = read(BufReader::new(release_file.unwrap())).unwrap();
+                let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
+                let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
+                let name = path.file_name().unwrap().to_str().unwrap().to_string();
 
-            // Collate required information
-            let properties = read(BufReader::new(release_file)).unwrap();
-            let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
-            let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
-            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+                // Build JVM Struct
+                let tmp_jvm = Jvm {
+                    version,
+                    architecture,
+                    name,
+                    path: path.to_str().unwrap().to_string(),
+                };
+                jvms.push(tmp_jvm);
+            } else {
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                let parts: Vec<String> = file_name.split("-").map(|s| s.to_string()).collect();
+                // Assuming four part or more form - e.g. "java-8-openjdk-amd64"
+                if parts.len() < 3 {
+                    continue;
+                }
+                let version = parts.get(1).unwrap().to_string();
+                let mut architecture = parts.get(3).unwrap().to_string();
+                architecture = architecture.replace("amd64", "x86_64");
+                architecture = architecture.replace("i386", "x86");
+                let name = file_name.to_string();
 
-            // Build JVM Struct
-            let tmp_jvm = Jvm {
-                version,
-                architecture,
-                name,
-                path: path.to_str().unwrap().to_string(),
-            };
-            jvms.push(tmp_jvm);
+                // Build JVM Struct
+                let tmp_jvm = Jvm {
+                    version,
+                    architecture,
+                    name,
+                    path: path.to_str().unwrap().to_string(),
+                };
+                jvms.push(tmp_jvm);
+            }
         }
     }
     jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));

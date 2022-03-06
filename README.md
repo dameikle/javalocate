@@ -98,6 +98,9 @@ The utility looks in the default JVM installation locations for the following op
 It assumes that the _release_ file is included in the JVM package on Linux, and the _release_ file and
 _Info.plist_ file is packaged on macOS.
 
+Experimental support has been added to build information from path file name where _release_ file is not available. This
+can occur on older JVMs.
+
 ## Building
 
 The utility is developed in Rust and can be build from source using:
