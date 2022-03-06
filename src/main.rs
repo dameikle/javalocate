@@ -91,7 +91,7 @@ fn main() {
 
 fn get_operating_system() -> OperatingSystem {
     let output = Command::new("uname")
-        .arg("-is")
+        .arg("-ps")
         .stdout(Stdio::piped())
         .output().unwrap();
 
@@ -113,6 +113,10 @@ fn get_operating_system() -> OperatingSystem {
             if arch.eq_ignore_ascii_case("x86_64") {
                 "x86_64".to_string()
             } else if arch.eq_ignore_ascii_case("i386") {
+                "x86".to_string()
+            } else if arch.eq_ignore_ascii_case("i586") {
+                "x86".to_string()
+            } else if arch.eq_ignore_ascii_case("i686") {
                 "x86".to_string()
             } else if arch.eq_ignore_ascii_case("aarch64") {
                 "aarch64".to_string()
