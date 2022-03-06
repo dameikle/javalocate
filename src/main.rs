@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
@@ -8,7 +9,7 @@ use java_properties::read;
 use plist::Value;
 
 
-/// Command line utility to find JVM versions on macOS
+/// Command line utility to find JVM versions on macOS and Linux
 #[derive(Parser, Debug)]
 #[clap(author, about, version, long_about = None)]
 struct Args {
@@ -30,24 +31,32 @@ struct Args {
 
     /// Return error code if no JVM found
     #[clap(short, long)]
-    fail: bool,
+    fail: bool
 }
+
 #[derive(Clone, Debug)]
 struct Jvm {
     version: String,
     name: String,
     architecture: String,
-    path: String,
+    path: String
+}
+
+#[derive(Clone, Debug)]
+struct OperatingSystem {
+    name: String,
+    family: String,
+    architecture: String
 }
 
 fn main() {
     let args = Args::parse();
 
     // Fetch default java architecture based on kernel
-    let default_java_arch = fetch_default_java_arch();
+    let operating_system = get_operating_system();
 
     // Build and filter JVMs
-    let jvms: Vec<Jvm> = collate_jvms(&default_java_arch)
+    let jvms: Vec<Jvm> = collate_jvms(&operating_system)
         .into_iter()
         .filter(|tmp| filter_arch(&args.arch, tmp))
         .filter(|tmp| filter_ver(&args.version, tmp))
@@ -80,9 +89,9 @@ fn main() {
     }
 }
 
-fn fetch_default_java_arch() -> String {
+fn get_operating_system() -> OperatingSystem {
     let output = Command::new("uname")
-        .arg("-ps")
+        .arg("-is")
         .stdout(Stdio::piped())
         .output().unwrap();
 
@@ -93,15 +102,49 @@ fn fetch_default_java_arch() -> String {
     let os = trim_string(parts.get(0).unwrap().as_str());
     let arch = trim_string(parts.get(1).unwrap().as_str());
 
-    if os.eq_ignore_ascii_case("Darwin") {
-        return if arch.eq_ignore_ascii_case("arm") {
-            "aarch64".to_string()
+    let default_architecture =
+        if os.eq_ignore_ascii_case("Darwin") {
+            if arch.eq_ignore_ascii_case("arm") {
+                "aarch64".to_string()
+            } else {
+                "x86_64".to_string()
+            }
+        } else if os.eq_ignore_ascii_case("Linux") {
+            if arch.eq_ignore_ascii_case("x86_64") {
+                "x86_64".to_string()
+            } else if arch.eq_ignore_ascii_case("i386") {
+                "x86".to_string()
+            } else if arch.eq_ignore_ascii_case("aarch64") {
+                "aarch64".to_string()
+            } else if arch.eq_ignore_ascii_case("arm64") {
+                "arm64".to_string()
+            } else {
+                eprintln!("{} architecture is unknown on Linux", arch);
+                std::process::exit(exitcode::UNAVAILABLE);
+            }
         } else {
-            "x86_64".to_string()
-        }
-    } else {
-        eprintln!("Running on non-Darwin Unix");
-        std::process::exit(exitcode::UNAVAILABLE);
+            eprintln!("Running on non-supported operation system");
+            std::process::exit(exitcode::UNAVAILABLE);
+        };
+
+    let mut name = String::new();
+    if os.eq_ignore_ascii_case("Linux") {
+        // Attempt to load the Release file into HashMap
+        let release_file = File::open("/etc/os-release");
+        let release_file = match release_file {
+            Ok(release_file) => release_file,
+            Err(_error) => std::process::exit(exitcode::UNAVAILABLE),
+        };
+        let properties = read(BufReader::new(release_file)).unwrap();
+        name.push_str(properties.get("ID").unwrap_or(&"".to_string()).replace("\"", "").as_str());
+    } else if os.eq_ignore_ascii_case("Darwin") {
+        name.push_str("macOS");
+    }
+
+    return OperatingSystem {
+        name,
+        family: os.to_string(),
+        architecture: default_architecture
     }
 }
 
@@ -111,10 +154,65 @@ fn trim_string(value: &str) -> &str {
         .unwrap_or(value)
 }
 
-fn collate_jvms(default_arch: &String) -> Vec<Jvm> {
+fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
+    return if os.family.eq_ignore_ascii_case("Darwin") {
+        collate_jvms_mac(os)
+    } else {
+        collate_jvms_linux(os)
+    }
+}
+
+fn collate_jvms_linux(os: &OperatingSystem) -> Vec<Jvm> {
     let mut jvms = Vec::new();
-    let paths = fs::read_dir("/Library/Java/JavaVirtualMachines").unwrap();
-    for path in paths {
+    let dir_lookup = HashMap::from(
+        [("ubuntu".to_string(), "/usr/lib/jvm".to_string()),
+            ("debian".to_string(), "/usr/lib/jvm".to_string()),
+            ("rhel".to_string(), "/usr/lib/jvm".to_string()),
+            ("centos".to_string(), "/usr/lib/jvm".to_string()),
+            ("fedora".to_string(), "/usr/lib/jvm".to_string())]);
+
+    let path = dir_lookup.get(os.name.as_str());
+    if path.is_none() {
+        eprintln!("Default JVM path is unknown on {} Linux", os.name);
+        std::process::exit(exitcode::UNAVAILABLE);
+    }
+
+    for path in fs::read_dir(path.unwrap()).unwrap() {
+        let path = path.unwrap().path();
+        let metadata = fs::metadata(&path).unwrap();
+        let link = fs::read_link(&path);
+
+        if metadata.is_dir() && link.is_err() {
+            // Attempt to load the Release file into HashMap
+            let release_file = File::open(path.join("release"));
+            let release_file = match release_file {
+                Ok(release_file) => release_file,
+                Err(_error) => continue,
+            };
+
+            // Collate required information
+            let properties = read(BufReader::new(release_file)).unwrap();
+            let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
+            let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+
+            // Build JVM Struct
+            let tmp_jvm = Jvm {
+                version,
+                architecture,
+                name,
+                path: path.to_str().unwrap().to_string(),
+            };
+            jvms.push(tmp_jvm);
+        }
+    }
+    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return jvms;
+}
+
+fn collate_jvms_mac(os: &OperatingSystem) -> Vec<Jvm> {
+    let mut jvms = Vec::new();
+    for path in fs::read_dir("/Library/Java/JavaVirtualMachines").unwrap() {
         let path = path.unwrap().path();
         let metadata = fs::metadata(&path).unwrap();
 
@@ -155,7 +253,7 @@ fn collate_jvms(default_arch: &String) -> Vec<Jvm> {
             jvms.push(tmp_jvm);
         }
     }
-    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, default_arch));
+    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
     return jvms;
 }
 
