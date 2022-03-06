@@ -38,7 +38,8 @@ OPTIONS:
 ```
 
 ### Outputs
-By default, the utility ouputs a single path location to the "top" JVM found, ordered by decending version (i.e. Java 17 > Java 8).
+By default, the utility outputs a single path location to the "top" JVM found, ordered by descending version (i.e. Java 17 > Java 8), 
+prioritising the system architecture (i.e. aarch64 > x86_64 on a Apple Silicon Mac).
 
 Passing the detailed flag (_--detailed_ or _-d_) prints the full details of all JVMs found.
 
