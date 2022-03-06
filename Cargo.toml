@@ -1,6 +1,6 @@
 [package]
 name = "javalocate"
-version = "0.3.1"
+version = "0.3.2"
 description = "Command line utility to find JVM versions on macOS and Linux"
 license = "Apache-2.0"
 repository = "https://github.com/dameikle/javalocate"
