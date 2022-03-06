@@ -101,6 +101,28 @@ _Info.plist_ file is packaged on macOS.
 Experimental support has been added to build information from path file name where _release_ file is not available. This
 can occur on older JVMs.
 
+## Tips and Tricks
+
+### Bash Alias
+
+Adding the following to your _~/.bashrc_ (or _~/.bash_aliases_) file:
+
+```bash
+setjava() {
+    export JAVA_HOME=`javalocate -v $1`
+}
+```
+
+Allows you to quickly flip between versions:
+```bash
+setjava 17
+echo $JAVA_HOME
+setjava 8
+echo $JAVA_HOME
+setjava 11
+echo $JAVA_HOME
+```
+
 ## Building
 
 The utility is developed in Rust and can be build from source using:
