@@ -1,9 +1,10 @@
 # javalocate
 [![license](https://img.shields.io/github/license/dameikle/javalocate.svg?maxAge=2592000)](https://github.com/dameikle/javalocate/blob/main/LICENSE)
-[![ubuntu build](https://github.com/dameikle/javalocate/actions/workflows/ubuntu.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
-[![windows build](https://github.com/dameikle/javalocate/actions/workflows/windows.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
 [![Crates.io](https://img.shields.io/crates/v/javalocate)](https://crates.io/crates/javalocate)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/dameikle/javalocate)](https://github.com/dameikle/javalocate/releases)
+[![ubuntu build](https://github.com/dameikle/javalocate/actions/workflows/ubuntu.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
+[![windows build](https://github.com/dameikle/javalocate/actions/workflows/windows.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
+[![macOS build](https://github.com/dameikle/javalocate/actions/workflows/macos.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
 
 Command line utility to find JVM versions on macOS, Linux (Debian, Ubuntu, RHEL/CentOS & Fedora) and Windows - useful 
 for setting _JAVA_HOME_, particularly on machines with different JVM versions and architectures. 
