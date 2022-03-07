@@ -1,6 +1,7 @@
 # javalocate
 [![license](https://img.shields.io/github/license/dameikle/javalocate.svg?maxAge=2592000)](https://github.com/dameikle/javalocate/blob/main/LICENSE)
-[![build](https://github.com/dameikle/javalocate/actions/workflows/rust.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
+[![ubuntu build](https://github.com/dameikle/javalocate/actions/workflows/ubuntu.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
+[![windows build](https://github.com/dameikle/javalocate/actions/workflows/windows.yml/badge.svg)](https://github.com/dameikle/javalocate/actions)
 [![Crates.io](https://img.shields.io/crates/v/javalocate)](https://crates.io/crates/javalocate)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/dameikle/javalocate)](https://github.com/dameikle/javalocate/releases)
 
