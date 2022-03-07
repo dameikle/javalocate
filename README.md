@@ -4,7 +4,8 @@
 [![Crates.io](https://img.shields.io/crates/v/javalocate)](https://crates.io/crates/javalocate)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/dameikle/javalocate)](https://github.com/dameikle/javalocate/releases)
 
-Command line utility to find JVM versions on macOS and Linux (Debian, Ubuntu, RHEL/CentOS & Fedora) - useful for setting _JAVA_HOME_, particularly on machines with different JVM versions and architectures. 
+Command line utility to find JVM versions on macOS, Linux (Debian, Ubuntu, RHEL/CentOS & Fedora) and Windows - useful 
+for setting _JAVA_HOME_, particularly on machines with different JVM versions and architectures. 
 
 I'm thinking of you, Java Devs with Apple Silicon hardware 🐱‍💻
 
@@ -86,16 +87,17 @@ export JAVA_HOME=$(javalocate -v 11+ -f)
 
 The utility looks in the default JVM installation locations for the following operating systems:
 
-| Operating System | Location                          |
-|------------------|-----------------------------------|
-| macOS            | /Library/Java/JavaVirtualMachines |
-| Ubuntu           | /usr/lib/jvm                      |
-| Debian           | /usr/lib/jvm                      |
-| RHEL             | /usr/lib/jvm                      |
-| CentOS           | /usr/lib/jvm                      |
-| Fedora           | /usr/lib/jvm                      |
+| Operating System | Location                               |
+|------------------|----------------------------------------|
+| macOS            | /Library/Java/JavaVirtualMachines      |
+| Ubuntu           | /usr/lib/jvm                           |
+| Debian           | /usr/lib/jvm                           |
+| RHEL             | /usr/lib/jvm                           |
+| CentOS           | /usr/lib/jvm                           |
+| Fedora           | /usr/lib/jvm                           |
+| Windows          | Registry - HKEY_LOCAL_MACHINE\Software |
 
-It assumes that the _release_ file is included in the JVM package on Linux, and the _release_ file and
+It assumes that the _release_ file is included in the JVM package on Linux and Windows, and the _release_ file and
 _Info.plist_ file is packaged on macOS.
 
 Experimental support has been added to build information from path file name where _release_ file is not available. This
@@ -121,6 +123,12 @@ setjava 8
 echo $JAVA_HOME
 setjava 11
 echo $JAVA_HOME
+```
+
+### Powershell
+You can set the version required in Powershell using the following syntax:
+```powershell
+$env:JAVA_HOME=$(javalocate.exe -v 11)
 ```
 
 ## Building

@@ -1,15 +1,28 @@
 use std::cmp::Ordering;
+#[cfg(target_os = "linux")]
 use std::collections::HashMap;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
+#[cfg(target_os = "windows")]
+use std::path::Path;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Command, Stdio};
 use clap::Parser;
 use java_properties::read;
+#[cfg(target_os = "macos")]
 use plist::Value;
 
+#[cfg(target_os = "windows")]
+extern crate winreg;
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_LOCAL_MACHINE;
 
-/// Command line utility to find JVM versions on macOS and Linux
+
+/// Command line utility to find JVM versions on macOS, Linux and Windows
 #[derive(Parser, Debug)]
 #[clap(author, about, version, long_about = None)]
 struct Args {
@@ -45,7 +58,6 @@ struct Jvm {
 #[derive(Clone)]
 struct OperatingSystem {
     name: String,
-    family: String,
     architecture: String
 }
 
@@ -89,6 +101,8 @@ fn main() {
     }
 }
 
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn get_operating_system() -> OperatingSystem {
     let output = Command::new("uname")
         .arg("-ps")
@@ -147,26 +161,44 @@ fn get_operating_system() -> OperatingSystem {
 
     return OperatingSystem {
         name,
-        family: os.to_string(),
         architecture: default_architecture
     }
 }
 
+#[cfg(target_os = "windows")]
+fn get_operating_system() -> OperatingSystem {
+    let current_version = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion").unwrap();
+    let name: String = current_version.get_value("ProductName").unwrap();
+
+    let environment = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment").unwrap();
+    let arch: String = environment.get_value("PROCESSOR_ARCHITECTURE").unwrap();
+    let default_architecture =
+        if arch.eq_ignore_ascii_case("amd64") {
+            "x86_64".to_string()
+        } else if arch.eq_ignore_ascii_case("x86") {
+            "x86".to_string()
+        } else if arch.eq_ignore_ascii_case("arm64") {
+            "arm64".to_string()
+        } else {
+            eprintln!("Unknown processor architecture");
+            std::process::exit(exitcode::UNAVAILABLE);
+        };
+
+    return OperatingSystem {
+        name,
+        architecture: default_architecture
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn trim_string(value: &str) -> &str {
     value.strip_suffix("\r\n")
         .or(value.strip_suffix("\n"))
         .unwrap_or(value)
 }
 
+#[cfg(target_os = "linux")]
 fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
-    return if os.family.eq_ignore_ascii_case("Darwin") {
-        collate_jvms_mac(os)
-    } else {
-        collate_jvms_linux(os)
-    }
-}
-
-fn collate_jvms_linux(os: &OperatingSystem) -> Vec<Jvm> {
     let mut jvms = Vec::new();
     let dir_lookup = HashMap::from(
         [("ubuntu".to_string(), "/usr/lib/jvm".to_string()),
@@ -232,7 +264,9 @@ fn collate_jvms_linux(os: &OperatingSystem) -> Vec<Jvm> {
     return jvms;
 }
 
-fn collate_jvms_mac(os: &OperatingSystem) -> Vec<Jvm> {
+#[cfg(target_os = "macos")]
+fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
+    assert!(os.name.contains("macOS"));
     let mut jvms = Vec::new();
     for path in fs::read_dir("/Library/Java/JavaVirtualMachines").unwrap() {
         let path = path.unwrap().path();
@@ -273,6 +307,66 @@ fn collate_jvms_mac(os: &OperatingSystem) -> Vec<Jvm> {
                 path: path.join("Contents/Home").to_str().unwrap().to_string(),
             };
             jvms.push(tmp_jvm);
+        }
+    }
+    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return jvms;
+}
+
+#[cfg(target_os = "windows")]
+fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
+    assert!(os.name.contains("Windows"));
+
+    let mut jvms = Vec::new();
+    // Loop round software keys
+    let system = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SOFTWARE").unwrap();
+    for name in system.enum_keys().map(|x| x.unwrap()) {
+        let software: String = name.clone();
+        // Find software with JDK key
+        for jdk in system.open_subkey(name).unwrap().enum_keys()
+                            .map(|x| x.unwrap())
+                            .filter(|x| x.starts_with("JDK")) {
+            // Next key should be JVM
+            for jvm in system.open_subkey(format!("{}\\{}", software, jdk)).unwrap().enum_keys().map(|x| x.unwrap()) {
+                let mut jvm_path = String::new();
+                // Old style JavaSoftware entry
+                let java_home: Result<String, _> = system.open_subkey(format!("{}\\{}\\{}", software, jdk, jvm)).unwrap().get_value("JavaHome");
+                if java_home.is_ok() {
+                    jvm_path = java_home.unwrap();
+                }
+                // Per JVM Entry - check for Hotspot or OpenJ9 entry
+                let hotspot_path: Result<RegKey, _> = system.open_subkey(format!("{}\\{}\\{}\\hotspot\\MSI", software, jdk, jvm));
+                if hotspot_path.is_ok() {
+                    jvm_path = hotspot_path.unwrap().get_value("Path").unwrap();
+                }
+                let openj9_path: Result<RegKey, _> = system.open_subkey(format!("{}\\{}\\{}\\openj9\\MSI", software, jdk, jvm));
+                if openj9_path.is_ok() {
+                    jvm_path = openj9_path.unwrap().get_value("Path").unwrap();
+                }
+                jvm_path = jvm_path.strip_suffix("\\").unwrap_or(jvm_path.as_str()).to_string();
+
+                let path = Path::new(jvm_path.as_str()).join("release");
+                let release_file = File::open(path);
+                if release_file.is_ok() {
+                    // Collate required information
+                    let properties = read(BufReader::new(release_file.unwrap())).unwrap();
+                    let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
+                    let mut architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
+                    architecture = architecture.replace("amd64", "x86_64");
+                    architecture = architecture.replace("i386", "x86");
+                    let implementor = properties.get("IMPLEMENTOR").unwrap_or(&"".to_string()).replace("\"", "");
+                    let name = format!("{} - {}", implementor, version);
+
+                    // Build JVM Struct
+                    let tmp_jvm = Jvm {
+                        version,
+                        architecture,
+                        name,
+                        path: jvm_path,
+                    };
+                    jvms.push(tmp_jvm);
+                }
+            }
         }
     }
     jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
@@ -458,6 +552,7 @@ mod tests {
         assert_eq!(compare_version_values(&"1.8".to_string(), &"8".to_string()), Ordering::Equal);
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn test_trim_string(){
         assert_eq!(trim_string("Arm\n"), "Arm");
