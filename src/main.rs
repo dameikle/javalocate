@@ -270,7 +270,7 @@ fn collate_jvms_mac(os: &OperatingSystem) -> Vec<Jvm> {
                 version,
                 architecture,
                 name,
-                path: path.to_str().unwrap().to_string(),
+                path: path.join("Contents/Home").to_str().unwrap().to_string(),
             };
             jvms.push(tmp_jvm);
         }
