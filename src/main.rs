@@ -393,7 +393,7 @@ fn filter_ver(ver: &Option<String>, jvm: &Jvm) -> bool {
             let sanitised_version = version.replace("+", "");
             let compare_jvm_version = get_compare_version(jvm, &sanitised_version);
             let compare = compare_version_values(&compare_jvm_version, &sanitised_version);
-            if compare.is_le() {
+            if compare.is_lt() {
                 return false;
             }
         } else {
@@ -558,6 +558,29 @@ mod tests {
         assert_eq!(trim_string("Arm\n"), "Arm");
         assert_eq!(trim_string("Arm\r\n"), "Arm");
         assert_eq!(trim_string("Arm"), "Arm");
+    }
+
+    #[test]
+    fn test_compare_version_architecture(){
+        let jvm1: Jvm = create_jvm("11.0.2",
+                                   "Eclipse Temurin 11",
+                                   "aarch64",
+                                   "/Library/Java/JavaVirtualMachines/temurin-11-aarch64.jdk");
+
+        let jvms: Vec<Jvm> = vec![jvm1.clone()];
+        check_version(jvms.clone(), "11+", 1);
+        check_version(jvms.clone(), "11.0+", 1);
+        check_version(jvms.clone(), "11.0.1+", 1);
+        check_version(jvms.clone(), "11.1+", 0);
+        check_version(jvms.clone(), "11.0.3+", 0);
+        check_version(jvms.clone(), "17+", 0);
+    }
+
+    fn check_version(jvms: Vec<Jvm>, version: &str, number: usize) {
+        let result: &Vec<Jvm> = &jvms.into_iter()
+            .filter(|tmp| filter_ver(&Option::Some(version.to_string()), tmp))
+            .collect();
+        assert_eq!(result.len(), number);
     }
 
     #[test]
