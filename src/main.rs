@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
@@ -9,6 +8,7 @@ use std::io::BufReader;
 use std::path::Path;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Command, Stdio};
+use serde::{Serialize, Deserialize};
 use clap::Parser;
 use java_properties::read;
 #[cfg(target_os = "macos")]
@@ -44,7 +44,19 @@ struct Args {
 
     /// Return error code if no JVM found
     #[clap(short, long)]
-    fail: bool
+    fail: bool,
+
+    /// Add location
+    #[clap(short = 'r', long)]
+    register_location: Option<String>,
+
+    /// Remove location
+    #[clap(short = 'x', long)]
+    remove_location: Option<String>,
+
+    /// Display locations
+    #[clap(short = 'l', long)]
+    display_locations: bool
 }
 
 #[derive(Clone)]
@@ -61,14 +73,58 @@ struct OperatingSystem {
     architecture: String
 }
 
+#[derive(Serialize, Deserialize)]
+struct Config {
+    paths: Vec<String>
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            paths: vec![]
+        }
+    }
+}
+
 fn main() {
     let args = Args::parse();
+    let mut cfg: Config = confy::load("javalocate").unwrap();
+
+    if !args.register_location.is_none() {
+        let location = args.register_location.as_ref().unwrap().as_str().to_string();
+        if !cfg.paths.contains(&location) {
+            cfg.paths.push(location);
+            confy::store("javalocate", &cfg).unwrap();
+        }
+        std::process::exit(exitcode::OK);
+    }
+
+    if !args.remove_location.is_none() {
+        let location = args.remove_location.as_ref().unwrap().as_str().to_string();
+        if let Some(pos) = cfg.paths.iter().position(|x| *x == location) {
+            cfg.paths.remove(pos);
+        }
+        confy::store("javalocate", &cfg).unwrap();
+        std::process::exit(exitcode::OK);
+    }
+
+    if args.display_locations {
+        if cfg.paths.is_empty() {
+            println!("No custom JVM locations registered");
+        } else {
+            println!("Custom JVM locations registered:");
+            for tmp in cfg.paths {
+                println!("{}", tmp);
+            }
+        }
+        std::process::exit(exitcode::OK);
+    }
 
     // Fetch default java architecture based on kernel
     let operating_system = get_operating_system();
 
     // Build and filter JVMs
-    let jvms: Vec<Jvm> = collate_jvms(&operating_system)
+    let jvms: Vec<Jvm> = collate_jvms(&operating_system, &cfg)
         .into_iter()
         .filter(|tmp| filter_arch(&args.arch, tmp))
         .filter(|tmp| filter_ver(&args.version, tmp))
@@ -198,7 +254,7 @@ fn trim_string(value: &str) -> &str {
 }
 
 #[cfg(target_os = "linux")]
-fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
+fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
     let mut jvms = Vec::new();
     let dir_lookup = HashMap::from(
         [("ubuntu".to_string(), "/usr/lib/jvm".to_string()),
@@ -208,53 +264,111 @@ fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
             ("fedora".to_string(), "/usr/lib/jvm".to_string())]);
 
     let path = dir_lookup.get(os.name.as_str());
-    if path.is_none() {
+    if path.is_none() && cfg.paths.is_empty() {
         eprintln!("Default JVM path is unknown on {} Linux", os.name);
         std::process::exit(exitcode::UNAVAILABLE);
     }
+    let mut paths = cfg.paths.to_vec();
+    paths.push(path.unwrap().to_string());
 
-    for path in fs::read_dir(path.unwrap()).unwrap() {
-        let path = path.unwrap().path();
-        let metadata = fs::metadata(&path).unwrap();
-        let link = fs::read_link(&path);
+    for path in paths {
+        for path in fs::read_dir(path).unwrap() {
+            let path = path.unwrap().path();
+            let metadata = fs::metadata(&path).unwrap();
+            let link = fs::read_link(&path);
 
-        if metadata.is_dir() && link.is_err() {
-            // Attempt to use release file, if not, attempt to build from folder name
-            let release_file = File::open(path.join("release"));
-            if release_file.is_ok() {
+            if metadata.is_dir() && link.is_err() {
+                // Attempt to use release file, if not, attempt to build from folder name
+                let release_file = File::open(path.join("release"));
+                if release_file.is_ok() {
+                    // Collate required information
+                    let properties = read(BufReader::new(release_file.unwrap())).unwrap();
+                    let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
+                    let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
+                    let name = path.file_name().unwrap().to_str().unwrap().to_string();
+
+                    // Build JVM Struct
+                    let tmp_jvm = Jvm {
+                        version,
+                        architecture,
+                        name,
+                        path: path.to_str().unwrap().to_string(),
+                    };
+                    jvms.push(tmp_jvm);
+                } else {
+                    let file_name = path.file_name().unwrap().to_str().unwrap();
+                    let parts: Vec<String> = file_name.split("-").map(|s| s.to_string()).collect();
+                    // Assuming four part or more form - e.g. "java-8-openjdk-amd64"
+                    if parts.len() < 3 || !parts.get(1).unwrap().to_string().eq("java") {
+                        continue;
+                    }
+
+                    let version = parts.get(1).unwrap().to_string();
+                    let mut architecture = parts.get(3).unwrap().to_string();
+                    architecture = architecture.replace("amd64", "x86_64");
+                    architecture = architecture.replace("i386", "x86");
+                    let name = file_name.to_string();
+
+                    // Build JVM Struct
+                    let tmp_jvm = Jvm {
+                        version,
+                        architecture,
+                        name,
+                        path: path.to_str().unwrap().to_string(),
+                    };
+                    jvms.push(tmp_jvm);
+                }
+            }
+        }
+    }
+    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return jvms;
+}
+
+#[cfg(target_os = "macos")]
+fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
+    assert!(os.name.contains("macOS"));
+    let mut jvms = Vec::new();
+    let mut paths = cfg.paths.to_vec();
+    paths.push("/Library/Java/JavaVirtualMachines".to_string());
+    for path in paths {
+        for path in fs::read_dir(path).unwrap() {
+            let path = path.unwrap().path();
+            let metadata = fs::metadata(&path).unwrap();
+
+            if metadata.is_dir() {
+                // Attempt to load the Info PList
+                let info =
+                    Value::from_file(path.join("Contents/Info.plist"));
+
+                let info = match info {
+                    Ok(info) => info,
+                    Err(_error) => continue,
+                };
+                let name = info
+                    .as_dictionary()
+                    .and_then(|dict| dict.get("CFBundleName"))
+                    .and_then(|info_string| info_string.as_string());
+                let name = name.unwrap_or(&"".to_string()).replace("\"", "");
+
+                // Attempt to load the Release file into HashMap
+                let release_file = File::open(path.join("Contents/Home/release"));
+                let release_file = match release_file {
+                    Ok(release_file) => release_file,
+                    Err(_error) => continue,
+                };
+
                 // Collate required information
-                let properties = read(BufReader::new(release_file.unwrap())).unwrap();
+                let properties = read(BufReader::new(release_file)).unwrap();
                 let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
                 let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
-                let name = path.file_name().unwrap().to_str().unwrap().to_string();
 
                 // Build JVM Struct
                 let tmp_jvm = Jvm {
                     version,
                     architecture,
                     name,
-                    path: path.to_str().unwrap().to_string(),
-                };
-                jvms.push(tmp_jvm);
-            } else {
-                let file_name = path.file_name().unwrap().to_str().unwrap();
-                let parts: Vec<String> = file_name.split("-").map(|s| s.to_string()).collect();
-                // Assuming four part or more form - e.g. "java-8-openjdk-amd64"
-                if parts.len() < 3 {
-                    continue;
-                }
-                let version = parts.get(1).unwrap().to_string();
-                let mut architecture = parts.get(3).unwrap().to_string();
-                architecture = architecture.replace("amd64", "x86_64");
-                architecture = architecture.replace("i386", "x86");
-                let name = file_name.to_string();
-
-                // Build JVM Struct
-                let tmp_jvm = Jvm {
-                    version,
-                    architecture,
-                    name,
-                    path: path.to_str().unwrap().to_string(),
+                    path: path.join("Contents/Home").to_str().unwrap().to_string(),
                 };
                 jvms.push(tmp_jvm);
             }
@@ -264,61 +378,12 @@ fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
     return jvms;
 }
 
-#[cfg(target_os = "macos")]
-fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
-    assert!(os.name.contains("macOS"));
-    let mut jvms = Vec::new();
-    for path in fs::read_dir("/Library/Java/JavaVirtualMachines").unwrap() {
-        let path = path.unwrap().path();
-        let metadata = fs::metadata(&path).unwrap();
-
-        if metadata.is_dir() {
-            // Attempt to load the Info PList
-            let info =
-                Value::from_file(path.join("Contents/Info.plist"));
-
-            let info = match info {
-                Ok(info) => info,
-                Err(_error) => continue,
-            };
-            let name = info
-                .as_dictionary()
-                .and_then(|dict| dict.get("CFBundleName"))
-                .and_then(|info_string| info_string.as_string());
-            let name = name.unwrap_or(&"".to_string()).replace("\"", "");
-
-            // Attempt to load the Release file into HashMap
-            let release_file = File::open(path.join("Contents/Home/release"));
-            let release_file = match release_file {
-                Ok(release_file) => release_file,
-                Err(_error) => continue,
-            };
-
-            // Collate required information
-            let properties = read(BufReader::new(release_file)).unwrap();
-            let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
-            let architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
-
-            // Build JVM Struct
-            let tmp_jvm = Jvm {
-                version,
-                architecture,
-                name,
-                path: path.join("Contents/Home").to_str().unwrap().to_string(),
-            };
-            jvms.push(tmp_jvm);
-        }
-    }
-    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
-    return jvms;
-}
-
 #[cfg(target_os = "windows")]
-fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
+fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
     assert!(os.name.contains("Windows"));
-
     let mut jvms = Vec::new();
-    // Loop round software keys
+
+    // Loop round software keys in the registry
     let system = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SOFTWARE").unwrap();
     for name in system.enum_keys().map(|x| x.unwrap()) {
         let software: String = name.clone();
@@ -348,29 +413,52 @@ fn collate_jvms(os: &OperatingSystem) -> Vec<Jvm> {
                 let path = Path::new(jvm_path.as_str()).join("release");
                 let release_file = File::open(path);
                 if release_file.is_ok() {
-                    // Collate required information
-                    let properties = read(BufReader::new(release_file.unwrap())).unwrap();
-                    let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
-                    let mut architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
-                    architecture = architecture.replace("amd64", "x86_64");
-                    architecture = architecture.replace("i386", "x86");
-                    let implementor = properties.get("IMPLEMENTOR").unwrap_or(&"".to_string()).replace("\"", "");
-                    let name = format!("{} - {}", implementor, version);
-
-                    // Build JVM Struct
-                    let tmp_jvm = Jvm {
-                        version,
-                        architecture,
-                        name,
-                        path: jvm_path,
-                    };
-                    jvms.push(tmp_jvm);
+                    jvms.push(process_release_file(&jvm_path, release_file.unwrap()));
                 }
+            }
+        }
+    }
+    // Read from Custom JVM Location Paths
+    if !cfg.paths.is_empty() {
+        for path in &cfg.paths {
+            for path in fs::read_dir(path).unwrap() {
+                let jvm_path = path.unwrap().path();
+                let metadata = fs::metadata(&jvm_path).unwrap();
+
+                if metadata.is_dir() {
+                    let path = Path::new(jvm_path.to_str().unwrap()).join("release");
+                    let release_file = File::open(&path);
+                    if release_file.is_ok() {
+                        jvms.push(process_release_file(&path.to_str().unwrap().to_string(), release_file.unwrap()));
+                    }
+                }
+
             }
         }
     }
     jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
     return jvms;
+}
+
+#[cfg(target_os = "windows")]
+fn process_release_file(jvm_path: &String, release_file: File) -> Jvm {
+    // Collate required information
+    let properties = read(BufReader::new(release_file)).unwrap();
+    let version = properties.get("JAVA_VERSION").unwrap_or(&"".to_string()).replace("\"", "");
+    let mut architecture = properties.get("OS_ARCH").unwrap_or(&"".to_string()).replace("\"", "");
+    architecture = architecture.replace("amd64", "x86_64");
+    architecture = architecture.replace("i386", "x86");
+    let implementor = properties.get("IMPLEMENTOR").unwrap_or(&"".to_string()).replace("\"", "");
+    let name = format!("{} - {}", implementor, version);
+
+    // Build JVM Struct
+    let tmp_jvm = Jvm {
+        version,
+        architecture,
+        name,
+        path: jvm_path.to_string(),
+    };
+    tmp_jvm
 }
 
 fn compare_boosting_architecture(a: &Jvm, b: &Jvm, default_arch: &String) -> Ordering {
