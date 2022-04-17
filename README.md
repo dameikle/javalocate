@@ -32,12 +32,15 @@ These are shown below:
 
 ```
 OPTIONS:
-    -a, --arch <ARCH>          Architecture to filter on (e.g. x86_64, aarch64, amd64)
-    -d, --detailed             Print out full details
-    -f, --fail                 Return error code if no JVM found
-    -h, --help                 Print help information
-    -n, --name <NAME>          JVM Name to filter on
-    -v, --version <VERSION>    Version to filter on (e.g. 1.8, 11, 17, etc)
+    -a, --arch <ARCH>                   Architecture to filter on (e.g. x86_64, aarch64, amd64)
+    -d, --detailed                      Print out full details
+    -f, --fail                          Return error code if no JVM found
+    -h, --help                          Print help information
+    -n, --name <NAME>                   JVM Name to filter on
+    -v, --version <VERSION>             Version to filter on (e.g. 1.8, 11, 17, etc)
+    -r, --register-location <LOCATION>  Registers a custom JVM location directory to search in
+    -x, --remove-location <LOCATION>    Removes a registered custom JVM location directory
+    -l, --display-locations             Displays all the custom JVM location directories that are registered
 ```
 
 ### Outputs
@@ -85,7 +88,7 @@ For example, the below would return an error code if Java 11 or above could not 
 export JAVA_HOME=$(javalocate -v 11+ -f)
 ```
 
-## Operating Systems Supported
+## Default Locations
 
 The utility looks in the default JVM installation locations for the following operating systems:
 
@@ -104,6 +107,14 @@ _Info.plist_ file is packaged on macOS.
 
 Experimental support has been added to build information from path file name where _release_ file is not available. This
 can occur on older JVMs.
+
+## Custom Locations
+
+You can add your own locations to search in using the Custom JVM Location options. For example, if you manually install 
+JVMs into the the _/opt/jvms_ directory you can configure it to be search using:
+```bash
+javalocate -r /opt/jvms
+```
 
 ## Tips and Tricks
 
