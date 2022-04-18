@@ -110,10 +110,26 @@ can occur on older JVMs.
 
 ## Custom Locations
 
-You can add your own locations to search in using the Custom JVM Location options. For example, if you manually install 
-JVMs into the the _/opt/jvms_ directory you can configure it to be search using:
+You can add your own locations to search in using the Custom JVM Location options. This can be useful
+if you maintain your own manually installed JVM collections.
+
+For example, if you manually install JVMs into the the _/opt/jvms_ directory you can configure it to 
+be searched using the _--register-location_ (-r) command:
 ```bash
 javalocate -r /opt/jvms
+javalocate --register-location /opt/jvms
+```
+
+If you want to then remove that location, you can use the _--remove-location_ (-x) command:
+```bash
+javalocate -x /opt/jvms
+javalocate --remove-location /opt/jvms
+```
+
+You can list the currently registered location using the _--display-locations_ (-l) command:
+```bash
+javalocate -l
+javalocate --display-locations
 ```
 
 ## Tips and Tricks
