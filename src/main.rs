@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::BufReader;
 #[cfg(target_os = "windows")]
 use std::path::Path;
@@ -59,7 +61,7 @@ struct Args {
     display_locations: bool
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Jvm {
     version: String,
     name: String,
@@ -255,7 +257,7 @@ fn trim_string(value: &str) -> &str {
 
 #[cfg(target_os = "linux")]
 fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
-    let mut jvms = Vec::new();
+    let mut jvms = HashSet::new();
     let dir_lookup = HashMap::from(
         [("ubuntu".to_string(), "/usr/lib/jvm".to_string()),
             ("debian".to_string(), "/usr/lib/jvm".to_string()),
@@ -294,7 +296,7 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                         name,
                         path: path.to_str().unwrap().to_string(),
                     };
-                    jvms.push(tmp_jvm);
+                    jvms.insert(tmp_jvm);
                 } else {
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let parts: Vec<String> = file_name.split("-").map(|s| s.to_string()).collect();
@@ -316,19 +318,20 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                         name,
                         path: path.to_str().unwrap().to_string(),
                     };
-                    jvms.push(tmp_jvm);
+                    jvms.insert(tmp_jvm);
                 }
             }
         }
     }
-    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
-    return jvms;
+    let mut return_vec: Vec<Jvm> = jvms.into_iter().collect();
+    return_vec.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return return_vec;
 }
 
 #[cfg(target_os = "macos")]
 fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
     assert!(os.name.contains("macOS"));
-    let mut jvms = Vec::new();
+    let mut jvms = HashSet::new();
     let mut paths = cfg.paths.to_vec();
     paths.push("/Library/Java/JavaVirtualMachines".to_string());
     for path in paths {
@@ -370,18 +373,19 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                     name,
                     path: path.join("Contents/Home").to_str().unwrap().to_string(),
                 };
-                jvms.push(tmp_jvm);
+                jvms.insert(tmp_jvm);
             }
         }
     }
-    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
-    return jvms;
+    let mut return_vec: Vec<Jvm> = jvms.into_iter().collect();
+    return_vec.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return return_vec;
 }
 
 #[cfg(target_os = "windows")]
 fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
     assert!(os.name.contains("Windows"));
-    let mut jvms = Vec::new();
+    let mut jvms = HashSet::new();
 
     // Loop round software keys in the registry
     let system = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SOFTWARE").unwrap();
@@ -413,7 +417,7 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                 let path = Path::new(jvm_path.as_str()).join("release");
                 let release_file = File::open(path);
                 if release_file.is_ok() {
-                    jvms.push(process_release_file(&jvm_path, release_file.unwrap()));
+                    jvms.insert(process_release_file(&jvm_path, release_file.unwrap()));
                 }
             }
         }
@@ -429,15 +433,16 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                     let path = Path::new(jvm_path.to_str().unwrap()).join("release");
                     let release_file = File::open(&path);
                     if release_file.is_ok() {
-                        jvms.push(process_release_file(&path.to_str().unwrap().to_string(), release_file.unwrap()));
+                        jvms.insert(process_release_file(&path.to_str().unwrap().to_string(), release_file.unwrap()));
                     }
                 }
 
             }
         }
     }
-    jvms.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
-    return jvms;
+    let mut return_vec: Vec<Jvm> = jvms.into_iter().collect();
+    return_vec.sort_by(|a, b| compare_boosting_architecture(a, b, &os.architecture));
+    return return_vec;
 }
 
 #[cfg(target_os = "windows")]
