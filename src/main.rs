@@ -26,7 +26,7 @@ use winreg::enums::HKEY_LOCAL_MACHINE;
 
 /// Command line utility to find JVM versions on macOS, Linux and Windows
 #[derive(Parser, Debug)]
-#[clap(author, about, version, long_about = None)]
+#[clap(author, about, long_about = None)]
 struct Args {
     /// JVM Name to filter on
     #[clap(short, long)]
