@@ -511,7 +511,15 @@ fn compare_version_values(version1: &String, version2: &String) -> Ordering {
         normalised2.split(".").map(|s| s.to_string()).collect();
 
     let compare = Ordering::Equal;
-    for i in 0..count_version1.len() {
+    let max_size = std::cmp::max(count_version1.len(), count_version2.len());
+
+    for i in 0..max_size {
+        if count_version1.get(i).is_none(){
+            return Ordering::Less
+        }
+        if count_version2.get(i).is_none(){
+            return Ordering::Greater
+        }
         let version1_int = count_version1.get(i).unwrap().parse::<i32>().unwrap();
         let version2_int = count_version2.get(i).unwrap().parse::<i32>().unwrap();
         if version1_int > version2_int {
@@ -638,6 +646,12 @@ mod tests {
         assert_eq!(compare_version_values(&"17".to_string(), &"17".to_string()), Ordering::Equal);
         assert_eq!(compare_version_values(&"17".to_string(), &"11".to_string()), Ordering::Greater);
         assert_eq!(compare_version_values(&"1.8".to_string(), &"8".to_string()), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_compare_version_values_non_equal(){
+        assert_eq!(compare_version_values(&"17.0.1.1".to_string(), &"17.0.1".to_string()), Ordering::Greater);
+        assert_eq!(compare_version_values(&"11.0.1".to_string(), &"17.0.1.101".to_string()), Ordering::Less);
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
