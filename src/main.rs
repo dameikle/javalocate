@@ -433,7 +433,7 @@ fn collate_jvms(os: &OperatingSystem, cfg: &Config) -> Vec<Jvm> {
                     let path = Path::new(jvm_path.to_str().unwrap()).join("release");
                     let release_file = File::open(&path);
                     if release_file.is_ok() {
-                        jvms.insert(process_release_file(&path.to_str().unwrap().to_string(), release_file.unwrap()));
+                        jvms.insert(process_release_file(&jvm_path.to_str().unwrap().to_string(), release_file.unwrap()));
                     }
                 }
 
